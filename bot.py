@@ -141,13 +141,17 @@ class ClearMLBot:
                 message_text = experiment_info["message"]
                 experiment_info = self.database.get_experiment_info(experiment_name)
 
-                last_iteration_db = experiment_info[1]
+                if experiment_info is None:
+                    self.database.store_experiment_info(experiment_name, last_iteration, -1, -1, -1)
+                    experiment_info = self.database.get_experiment_info(experiment_name)
+
+                _, last_iteration_db, text_msg_id, train_msg_id, val_msg_id = experiment_info
                 if last_iteration == last_iteration_db:
                     continue
                 
-                if experiment_info and experiment_info[2] != -1:
-                    _, _, _, train_msg_id, val_msg_id = experiment_info
-                    sent_message = self.bot.send_message(chat_id, message_text)
+                if text_msg_id != -1:
+                    _, _, text_msg_id, train_msg_id, val_msg_id = experiment_info
+                    sent_message = self.bot.edit_message_text(message_text, chat_id, text_msg_id)
                     self.database.store_experiment_info(experiment_name, last_iteration, sent_message.message_id, train_msg_id, val_msg_id)
                 else:
                     sent_message = self.bot.send_message(chat_id, message_text)
@@ -164,23 +168,25 @@ class ClearMLBot:
             print(f'Section {section} not in [train, val]')
             return
         experiment_info = self.database.get_experiment_info(experiment_name)
-        if not experiment_info:
-            print(f'Experiment {experiment_name} has no info in database')
-            return
 
         _, _, text_msg_id, train_msg_id, val_msg_id = experiment_info
         if section == "train":
             message_id = train_msg_id
-            train_msg_id = message_id
         elif section == "val":
             message_id = val_msg_id
-            val_msg_id = message_id
 
         if message_id != -1:
-            self.bot.delete_message(chat_id, message_id)
-        sent_message = self.bot.send_photo(chat_id, image)
-        self.database.store_experiment_info(experiment_name, last_iteration, sent_message.message_id, train_msg_id, val_msg_id)
+            sent_message = self.bot.edit_message_media(chat_id=chat_id, message_id=message_id, 
+                                                       media=telebot.types.InputMediaPhoto(image))
+        else:
+            sent_message = self.bot.send_photo(chat_id, image)
 
+        if section == "train":
+            train_msg_id = sent_message.message_id
+        elif section == "val":
+            val_msg_id = sent_message.message_id
+
+        self.database.store_experiment_info(experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id)
 
     def start_bot(self):
         self.bot.polling()

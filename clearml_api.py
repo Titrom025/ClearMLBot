@@ -107,27 +107,30 @@ class ClearML_API_Wrapped(APIClient):
             unique_train_metric_names = set(train_metric_names)
 
             legend_labels = []
-            plt.figure(figsize=(8, 6))
+            plt.figure(figsize=(10, 6))
 
             for i, metric_name in enumerate(unique_train_metric_names):
                 mask = [name == metric_name for name in train_metric_names]
+                metric_iterations = [train_iterations[j] for j, m in enumerate(mask) if m]
+                metric_values = [train_values[j] for j, m in enumerate(mask) if m]
                 plt.plot(
-                    [train_iterations[j] for j, m in enumerate(mask) if m],
-                    [train_values[j] for j, m in enumerate(mask) if m],
+                    metric_iterations,
+                    metric_values,
                     marker='o',
                     linestyle='-',
                     label=f'{metric_name}',
                     color=color_palette(i)
                 )
-                legend_labels.append(f'{metric_name}') 
+                legend_labels.append(f'{metric_name}: {round(metric_values[-1], 3)}') 
 
             plt.title(f"Train Metrics for {experiment_name}")
             plt.xlabel('Iterations')
             plt.ylabel('Values')
-            plt.xticks(np.arange(min(train_values), max(train_values)+1, 1.0))
-            plt.yscale('log')
+            plt.xticks(np.arange(min(train_iterations), max(train_iterations) + 1, 1))
+            ax = plt.gca()
+            ax.set_ylim([0, 1.0])
             plt.legend(labels=legend_labels, loc='upper center', 
-                       bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=5)
+                       bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=4)
             plt.tight_layout()
             img = io.BytesIO()
             plt.savefig(img, format='png')
@@ -143,26 +146,30 @@ class ClearML_API_Wrapped(APIClient):
             unizue_val_metric_names = set(val_metric_names)
 
             legend_labels = []
-            plt.figure(figsize=(8, 6))
+            plt.figure(figsize=(10, 6))
 
             for i, metric_name in enumerate(unizue_val_metric_names):
                 mask = [name == metric_name for name in val_metric_names]
+                metric_iterations = [val_iterations[j] for j, m in enumerate(mask) if m]
+                metric_values = [val_values[j] for j, m in enumerate(mask) if m]
                 plt.plot(
-                    [val_iterations[j] for j, m in enumerate(mask) if m],
-                    [val_values[j] for j, m in enumerate(mask) if m],
+                    metric_iterations,
+                    metric_values,
                     marker='o',
                     linestyle='-',
                     label=f'{metric_name}',
                     color=color_palette(i)
                 )
-                legend_labels.append(f'{metric_name}') 
+                legend_labels.append(f'{metric_name}: {round(metric_values[-1], 3)}')
 
             plt.title(f"Validation Metrics for {experiment_name}")
             plt.xlabel('Iterations')
             plt.ylabel('Values')
-            plt.yscale('log')
+            plt.xticks(np.arange(min(val_iterations), max(val_iterations) + 1, 1))
+            ax = plt.gca()
+            ax.set_ylim([0, 1.0])
             plt.legend(labels=legend_labels, loc='upper center', 
-                       bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=5)
+                       bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=4)
             plt.tight_layout()
             img = io.BytesIO()
             plt.savefig(img, format='png')
