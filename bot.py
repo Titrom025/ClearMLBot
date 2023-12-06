@@ -1,81 +1,153 @@
-import time
+import logging
 
 import telebot
 
-from typing import Any
-from clearml import Task
-from clearml.backend_api.session.client import APIClient
+from clearml_api import ClearML_API_Wrapped
 
 
-telegram_token = 'TG_BOT_TOKEN'
-bot = telebot.TeleBot(telegram_token)
-client = APIClient()
+class ClearMLBot:
+    def __init__(self, bot_token, database):
+        self.database = database
+        self.bot = telebot.TeleBot(bot_token)
 
-task_db = {}
+        self.user_data = {}
+        self.subscribed_users = set()
+        self.user_sessions = {}
 
-def extract_metrics(data):
-    metrics = [] 
+        def send_and_log(message, chat_id):
+            logging.info(message)
+            self.bot.send_message(chat_id, message)
 
-    for item in data.values():
-        if 'metric' in item:
-            if ":monitor:" in item['metric']:
-                continue
-            metrics.append({
-                'section': item['metric'], 
-                'metric': item['variant'],
-                'value': item['value'],
-                'min_value': item['min_value'],
-                'max_value': item['max_value'],
-                'min_value_iteration': item['min_value_iteration'],
-                'max_value_iteration': item['max_value_iteration']
-            })
-        else:
-            metrics.extend(extract_metrics(item))
+        @self.bot.message_handler(commands=['start'])
+        def start_command(message):
+            self.bot.reply_to(
+                message, 
+                "Welcome to the ClearML assistant bot!\n"
+                "Use /register to add your ClearML credentials.\n"
+                "For more info type /help"
+            )
+            
+        @self.bot.message_handler(commands=['help'])
+        def start_command(message):
+            self.bot.reply_to(
+                message, 
+                "Available commands:\n"
+                "/help - print this message\n"
+                "/register - add your ClearML credentials\n"
+                "/subscribe - subscribe to your ClearML experiment updates\n"
+                "/unsubscribe - stop receiving experiment updates\n"
+                "/update - manually request information about active experiments\n"
+            )
 
-    return metrics
+        @self.bot.message_handler(commands=['register'])
+        def register_command(message):
+            chat_id = message.chat.id
+            if self.database.get_user_by_id(chat_id) is not None:
+                self.bot.send_message(chat_id, "You have already registered!")
+                return
+            self.user_data[chat_id] = {
+                "chat_id": message.chat.id,
+                "username": message.chat.username
+            }
+            self.bot.send_message(chat_id, "Please enter your host:")
+            self.bot.register_next_step_handler(message, self.get_host)
 
+        @self.bot.message_handler(commands=['running_experiments'])
+        def get_running_experiments(message):
+            chat_id = message.chat.id
+            if chat_id in self.subscribed_users:
+                send_and_log(f'User {chat_id} was already subscribed!', chat_id)
+                return
+            self.subscribed_users.add(chat_id)
+            send_and_log(f'User {chat_id} subscribed to updates!', chat_id)
 
-@bot.message_handler(commands=['running_experiments'])
-def get_running_experiments(message):
-    chat_id = message.chat.id
+        @self.bot.message_handler(commands=['subscribe'])
+        def subscribe_command(message):
+            chat_id = message.chat.id
+            if chat_id in self.user_sessions:
+                send_and_log(f'User {message.chat.username} was already subscribed!', chat_id)
+                return
+            self.subscribe_user(chat_id)
+            send_and_log(f'User {message.chat.username} subscribed to updates!', chat_id)
 
-    running_task_list = client.tasks.get_all(status=[Task.TaskStatusEnum.in_progress.value])
+        @self.bot.message_handler(commands=['unsubscribe'])
+        def unsubscribe_command(message):
+            chat_id = message.chat.id
+            if chat_id not in self.user_sessions:
+                send_and_log(f'User "{message.chat.username}" wasn\'t subscribed!', chat_id)
+                return
+            self.user_sessions.pop(chat_id)
+            send_and_log(f'User "{message.chat.username}" unsubscribed from updates!', chat_id)
 
-    message_text = f"Running experiment count: {len(running_task_list)}\n"
-    skip_message_sending = True
-    for running_task in running_task_list:
-        if task_db.get(running_task.name, -1) == running_task.last_iteration:
-            continue
+        @self.bot.message_handler(commands=['update'])
+        def update_command(message):
+            chat_id = message.chat.id
+            if chat_id not in self.user_sessions:
+                send_and_log(f'Use /subscribe to start tracking experiments', chat_id)
+                return
+            
+            user_api_client = self.user_sessions[chat_id]
+            experiments_info = user_api_client.update_running_experiments()
+            if experiments_info is None:
+                experiments_info = "No updates were found!"
+            self.bot.send_message(chat_id, experiments_info)
+            
+        
+    def polling(self):
+        self.bot.polling()
 
-        skip_message_sending = False
-        task_db[running_task.name] = running_task.last_iteration
+    def get_host(self, message):
+        chat_id = message.chat.id
+        host = message.text.strip()
+        self.user_data[chat_id]['host'] = host
+        self.bot.send_message(chat_id, "Please enter your API token:")
+        self.bot.register_next_step_handler(message, self.get_api_key)
 
-        message_text += f'Name: {running_task.name}, Iteration: {running_task.last_iteration}\n'
+    def get_api_key(self, message):
+        chat_id = message.chat.id
+        api_key = message.text.strip()
+        self.user_data[chat_id]['api_key'] = api_key
+        self.bot.send_message(chat_id, "Please enter your secret token:")
+        self.bot.register_next_step_handler(message, self.get_secret_key)
 
-        last_task_metrics = running_task.last_metrics
-        for metric_info in extract_metrics(last_task_metrics):
-            metric_str =  f'  - {metric_info["section"]}/{metric_info["metric"]}: Value: {metric_info["value"]}\n'
-            if metric_info["section"] == "train":
-                metric_str += f'    Min value: {metric_info["min_value"]}, Min iter: {metric_info["min_value_iteration"]}\n'
-            elif metric_info["section"] == "val":
-                metric_str += f'    Max value: {metric_info["max_value"]}, Max iter: {metric_info["max_value_iteration"]}\n'
-            message_text += metric_str
-        message_text += '\n'
+    def subscribe_user(self, chat_id):
+        user_from_db = self.database.get_user_by_id(chat_id)
+        if user_from_db is None:
+            self.bot.send_message(chat_id, "Use /register to add your ClearML credentials.")
+            return
 
-    if not skip_message_sending:
-        print(message_text)
-        bot.send_message(chat_id, message_text)
+        db_chat_id, username, host, api_key, secret_key = user_from_db
 
+        assert chat_id == db_chat_id
+        user_api_client = ClearML_API_Wrapped(
+            host,
+            api_key,
+            secret_key
+        )
+        self.user_sessions[chat_id] = user_api_client
 
-class DummyMessage():
-    def __getattribute__(self, __name: str) -> Any:
-        if __name == "chat":
-            return DummyMessage()
-        elif __name == "id": 
-            return 215956314
+    def get_secret_key(self, message):
+        chat_id = message.chat.id
+        secret_key = message.text.strip()
+        self.user_data[chat_id]['secret_key'] = secret_key
 
-if __name__ == '__main__':
-    message = DummyMessage()
-    while True:
-        get_running_experiments(message)
-        time.sleep(30)
+        registered_data = self.user_data[chat_id]
+        self.database.insert_user(
+            chat_id,
+            message.chat.username,
+            registered_data['host'],
+            registered_data['api_key'],
+            registered_data['secret_key']
+        )
+
+        self.bot.send_message(chat_id, "Registration successful! Your credentials have been saved.")
+
+    def send_updates_to_users(self):
+        for chat_id in self.user_sessions:
+            user_api_client = self.user_sessions[chat_id]
+            experiments_info = user_api_client.update_running_experiments()
+            if experiments_info is not None:
+                self.bot.send_message(chat_id, experiments_info)
+
+    def start_bot(self):
+        self.bot.polling()
