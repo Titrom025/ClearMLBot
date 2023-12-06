@@ -79,19 +79,6 @@ class ClearMLBot:
             self.user_sessions.pop(chat_id)
             send_and_log(f'User "{message.chat.username}" unsubscribed from updates!', chat_id)
 
-        @self.bot.message_handler(commands=['update'])
-        def update_command(message):
-            chat_id = message.chat.id
-            if chat_id not in self.user_sessions:
-                send_and_log(f'Use /subscribe to start tracking experiments', chat_id)
-                return
-            
-            user_api_client = self.user_sessions[chat_id]
-            experiments_info = user_api_client.update_running_experiments()
-            if experiments_info is None:
-                experiments_info = "No updates were found!"
-            self.bot.send_message(chat_id, experiments_info)
-            
         
     def polling(self):
         self.bot.polling()
@@ -146,13 +133,53 @@ class ClearMLBot:
     def send_updates_to_users(self):
         for chat_id in self.user_sessions:
             user_api_client = self.user_sessions[chat_id]
-            experiments_info, train_image, val_image = user_api_client.update_running_experiments()
-            if experiments_info is not None:
-                self.bot.send_message(chat_id, experiments_info)
-            if train_image is not None:
-                self.bot.send_photo(chat_id, train_image)
-            if val_image is not None:
-                self.bot.send_photo(chat_id, val_image)
+            experiment_infos, train_images, val_images = user_api_client.update_running_experiments()
+
+            for experiment_info, train_image, val_image in zip(experiment_infos, train_images, val_images):
+                experiment_name = experiment_info["experiment_name"]
+                last_iteration = experiment_info["last_iteration"]
+                message_text = experiment_info["message"]
+                experiment_info = self.database.get_experiment_info(experiment_name)
+
+                last_iteration_db = experiment_info[1]
+                if last_iteration == last_iteration_db:
+                    continue
+                
+                if experiment_info and experiment_info[2] != -1:
+                    _, _, _, train_msg_id, val_msg_id = experiment_info
+                    sent_message = self.bot.send_message(chat_id, message_text)
+                    self.database.store_experiment_info(experiment_name, last_iteration, sent_message.message_id, train_msg_id, val_msg_id)
+                else:
+                    sent_message = self.bot.send_message(chat_id, message_text)
+                    self.database.store_experiment_info(experiment_name, last_iteration, sent_message.message_id, -1, -1)
+
+                if train_image is not None:
+                    self.send_or_update_photo(chat_id, experiment_name, last_iteration, train_image, "train")
+                if val_image is not None:
+                    self.send_or_update_photo(chat_id, experiment_name, last_iteration, val_image, "val")
+
+
+    def send_or_update_photo(self, chat_id, experiment_name, last_iteration, image, section):
+        if section not in ["train", "val"]:
+            print(f'Section {section} not in [train, val]')
+            return
+        experiment_info = self.database.get_experiment_info(experiment_name)
+        if not experiment_info:
+            print(f'Experiment {experiment_name} has no info in database')
+            return
+
+        _, _, text_msg_id, train_msg_id, val_msg_id = experiment_info
+        if section == "train":
+            message_id = train_msg_id
+            train_msg_id = message_id
+        elif section == "val":
+            message_id = val_msg_id
+            val_msg_id = message_id
+
+        if message_id != -1:
+            self.bot.delete_message(chat_id, message_id)
+        sent_message = self.bot.send_photo(chat_id, image)
+        self.database.store_experiment_info(experiment_name, last_iteration, sent_message.message_id, train_msg_id, val_msg_id)
 
 
     def start_bot(self):

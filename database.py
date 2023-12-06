@@ -28,6 +28,16 @@ class Database:
             )
         ''')
 
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS experiments (
+                experiment_name TEXT PRIMARY KEY,
+                last_iteration INTEGER,
+                text_msg_id INTEGER,
+                train_msg_id INTEGER,
+                val_msg_id INTEGER
+            )
+        ''')
+
         self.conn.commit()
 
     def insert_user(self, user_id, username, host, api_key, secret_key):
@@ -66,6 +76,17 @@ class Database:
             WHERE experiment_name = ? AND section = ?
         ''', (experiment_name, section))
         return self.cursor.fetchall()
+    
+    def store_experiment_info(self, experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id):
+        self.cursor.execute('''
+            INSERT OR REPLACE INTO experiments (experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id))
+        self.conn.commit()
+
+    def get_experiment_info(self, experiment_name):
+        self.cursor.execute('SELECT * FROM experiments WHERE experiment_name = ?', (experiment_name,))
+        return self.cursor.fetchone()
     
     def close_connection(self):
         self.conn.close()

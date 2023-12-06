@@ -1,8 +1,12 @@
 import io
+from math import log
+
+import numpy as np
 from clearml import Task
 from clearml.backend_api.session import Session
 from clearml.backend_api.session.client import APIClient
 from matplotlib import pyplot as plt
+
 
 class ClearML_API_Wrapped(APIClient):
     def __init__(self, host, api_key, secret_key, database):
@@ -20,21 +24,20 @@ class ClearML_API_Wrapped(APIClient):
         self.running_tasks = {}
 
     def update_running_experiments(self):
+        experiment_infos = []
+        train_images = []
+        val_images = []
         running_task_list = self.tasks.get_all(status=[Task.TaskStatusEnum.in_progress.value])
         if not len(running_task_list):
-            return None, None, None
-        message_text = f"Running experiment count: {len(running_task_list)}\n"
-        train_image, val_image = None, None
+            return experiment_infos, train_images, val_images
 
-        skip_message_sending = True
         for running_task in running_task_list:
             if self.running_tasks.get(running_task.name, -1) == running_task.last_iteration:
                 continue
 
-            skip_message_sending = False
             self.running_tasks[running_task.name] = running_task.last_iteration
 
-            message_text += f'Name: {running_task.name}, Iteration: {running_task.last_iteration}\n'
+            message_text = f'Name: {running_task.name}, Iteration: {running_task.last_iteration}\n'
 
             last_task_metrics = running_task.last_metrics
 
@@ -49,15 +52,20 @@ class ClearML_API_Wrapped(APIClient):
                         metric_info["value"]
                     ))
 
-            if all_metrics:
-                for metric_data in all_metrics:
-                    self.db.insert_metric(*metric_data)
+            for metric_data in all_metrics:
+                self.db.insert_metric(*metric_data)
 
-                train_image, val_image = self.plot_metrics_for_experiment(running_task.name)
+            train_image, val_image = self.plot_metrics_for_experiment(running_task.name)
 
-        if skip_message_sending:
-            return None, None, None
-        return message_text, train_image, val_image
+            experiment_infos.append({
+                "experiment_name": running_task.name,
+                "last_iteration": running_task.last_iteration,
+                "message": message_text
+            })
+            train_images.append(train_image)
+            val_images.append(val_image)
+
+        return experiment_infos, train_images, val_images
     
     @staticmethod
     def _extract_metrics(data):
@@ -116,6 +124,8 @@ class ClearML_API_Wrapped(APIClient):
             plt.title(f"Train Metrics for {experiment_name}")
             plt.xlabel('Iterations')
             plt.ylabel('Values')
+            plt.xticks(np.arange(min(train_values), max(train_values)+1, 1.0))
+            plt.yscale('log')
             plt.legend(labels=legend_labels, loc='upper center', 
                        bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=5)
             plt.tight_layout()
@@ -150,6 +160,7 @@ class ClearML_API_Wrapped(APIClient):
             plt.title(f"Validation Metrics for {experiment_name}")
             plt.xlabel('Iterations')
             plt.ylabel('Values')
+            plt.yscale('log')
             plt.legend(labels=legend_labels, loc='upper center', 
                        bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=5)
             plt.tight_layout()
