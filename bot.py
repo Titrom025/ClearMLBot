@@ -122,7 +122,8 @@ class ClearMLBot:
         user_api_client = ClearML_API_Wrapped(
             host,
             api_key,
-            secret_key
+            secret_key,
+            self.database
         )
         self.user_sessions[chat_id] = user_api_client
 
@@ -145,9 +146,14 @@ class ClearMLBot:
     def send_updates_to_users(self):
         for chat_id in self.user_sessions:
             user_api_client = self.user_sessions[chat_id]
-            experiments_info = user_api_client.update_running_experiments()
+            experiments_info, train_image, val_image = user_api_client.update_running_experiments()
             if experiments_info is not None:
                 self.bot.send_message(chat_id, experiments_info)
+            if train_image is not None:
+                self.bot.send_photo(chat_id, train_image)
+            if val_image is not None:
+                self.bot.send_photo(chat_id, val_image)
+
 
     def start_bot(self):
         self.bot.polling()

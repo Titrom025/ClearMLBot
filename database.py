@@ -16,6 +16,18 @@ class Database:
                 secret_key TEXT
             )
         ''')
+
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS metrics (
+                experiment_name TEXT,
+                section TEXT,
+                metric_name TEXT,
+                iteration INTEGER,
+                value REAL,
+                PRIMARY KEY (experiment_name, section, metric_name, iteration)
+            )
+        ''')
+
         self.conn.commit()
 
     def insert_user(self, user_id, username, host, api_key, secret_key):
@@ -41,6 +53,20 @@ class Database:
         self.cursor.execute('DELETE FROM users WHERE username = ?', (username,))
         self.conn.commit()
 
+    def insert_metric(self, experiment_name, section, metric_name, iteration, value):
+        self.cursor.execute('''
+            INSERT or REPLACE INTO metrics (experiment_name, section, metric_name, iteration, value)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (experiment_name, section, metric_name, iteration, value))
+        self.conn.commit()
+
+    def get_metrics_by_section(self, experiment_name, section):
+        self.cursor.execute('''
+            SELECT * FROM metrics 
+            WHERE experiment_name = ? AND section = ?
+        ''', (experiment_name, section))
+        return self.cursor.fetchall()
+    
     def close_connection(self):
         self.conn.close()
 

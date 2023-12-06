@@ -1,10 +1,12 @@
+import io
 from clearml import Task
 from clearml.backend_api.session import Session
 from clearml.backend_api.session.client import APIClient
-
+from matplotlib import pyplot as plt
 
 class ClearML_API_Wrapped(APIClient):
-    def __init__(self, host, api_key, secret_key):
+    def __init__(self, host, api_key, secret_key, database):
+        self.db = database
         session = Session(
             host=host,
             api_key=api_key,
@@ -20,8 +22,10 @@ class ClearML_API_Wrapped(APIClient):
     def update_running_experiments(self):
         running_task_list = self.tasks.get_all(status=[Task.TaskStatusEnum.in_progress.value])
         if not len(running_task_list):
-            return None
+            return None, None, None
         message_text = f"Running experiment count: {len(running_task_list)}\n"
+        train_image, val_image = None, None
+
         skip_message_sending = True
         for running_task in running_task_list:
             if self.running_tasks.get(running_task.name, -1) == running_task.last_iteration:
@@ -33,18 +37,27 @@ class ClearML_API_Wrapped(APIClient):
             message_text += f'Name: {running_task.name}, Iteration: {running_task.last_iteration}\n'
 
             last_task_metrics = running_task.last_metrics
+
+            all_metrics = []
             for metric_info in ClearML_API_Wrapped._extract_metrics(last_task_metrics):
-                metric_str =  f'  - {metric_info["section"]}/{metric_info["metric"]}: Value: {metric_info["value"]}\n'
-                if metric_info["section"] == "train":
-                    metric_str += f'    Min value: {metric_info["min_value"]}, Min iter: {metric_info["min_value_iteration"]}\n'
-                elif metric_info["section"] == "val":
-                    metric_str += f'    Max value: {metric_info["max_value"]}, Max iter: {metric_info["max_value_iteration"]}\n'
-                message_text += metric_str
-            message_text += '\n'
+                if metric_info["section"] in ["train", "val"]:
+                    all_metrics.append((
+                        running_task.name,
+                        metric_info["section"],
+                        metric_info["metric"],
+                        running_task.last_iteration,
+                        metric_info["value"]
+                    ))
+
+            if all_metrics:
+                for metric_data in all_metrics:
+                    self.db.insert_metric(*metric_data)
+
+                train_image, val_image = self.plot_metrics_for_experiment(running_task.name)
 
         if skip_message_sending:
-            return None
-        return message_text
+            return None, None, None
+        return message_text, train_image, val_image
     
     @staticmethod
     def _extract_metrics(data):
@@ -67,3 +80,83 @@ class ClearML_API_Wrapped(APIClient):
                 metrics.extend(ClearML_API_Wrapped._extract_metrics(item))
 
         return metrics
+
+    def plot_metrics_for_experiment(self, experiment_name):
+        train_metrics = self.db.get_metrics_by_section(experiment_name, "train")
+        val_metrics = self.db.get_metrics_by_section(experiment_name, "val")
+
+        all_metrics = train_metrics + val_metrics
+        unique_metrics = set(metric[2] for metric in all_metrics)
+
+        num_unique_metrics = len(unique_metrics)
+        color_palette = plt.cm.get_cmap('tab10', num_unique_metrics)
+
+        train_image = None
+        if train_metrics:
+            train_iterations = [metric[3] for metric in train_metrics]
+            train_values = [metric[4] for metric in train_metrics]
+            train_metric_names = [metric[2] for metric in train_metrics]
+            unique_train_metric_names = set(train_metric_names)
+
+            legend_labels = []
+            plt.figure(figsize=(8, 6))
+
+            for i, metric_name in enumerate(unique_train_metric_names):
+                mask = [name == metric_name for name in train_metric_names]
+                plt.plot(
+                    [train_iterations[j] for j, m in enumerate(mask) if m],
+                    [train_values[j] for j, m in enumerate(mask) if m],
+                    marker='o',
+                    linestyle='-',
+                    label=f'{metric_name}',
+                    color=color_palette(i)
+                )
+                legend_labels.append(f'{metric_name}') 
+
+            plt.title(f"Train Metrics for {experiment_name}")
+            plt.xlabel('Iterations')
+            plt.ylabel('Values')
+            plt.legend(labels=legend_labels, loc='upper center', 
+                       bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=5)
+            plt.tight_layout()
+            img = io.BytesIO()
+            plt.savefig(img, format='png')
+            img.seek(0)
+            train_image = img
+            plt.close()
+
+        val_image = None
+        if val_metrics:
+            val_iterations = [metric[3] for metric in val_metrics]
+            val_values = [metric[4] for metric in val_metrics]
+            val_metric_names = [metric[2] for metric in val_metrics]
+            unizue_val_metric_names = set(val_metric_names)
+
+            legend_labels = []
+            plt.figure(figsize=(8, 6))
+
+            for i, metric_name in enumerate(unizue_val_metric_names):
+                mask = [name == metric_name for name in val_metric_names]
+                plt.plot(
+                    [val_iterations[j] for j, m in enumerate(mask) if m],
+                    [val_values[j] for j, m in enumerate(mask) if m],
+                    marker='o',
+                    linestyle='-',
+                    label=f'{metric_name}',
+                    color=color_palette(i)
+                )
+                legend_labels.append(f'{metric_name}') 
+
+            plt.title(f"Validation Metrics for {experiment_name}")
+            plt.xlabel('Iterations')
+            plt.ylabel('Values')
+            plt.legend(labels=legend_labels, loc='upper center', 
+                       bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=5)
+            plt.tight_layout()
+            img = io.BytesIO()
+            plt.savefig(img, format='png')
+            img.seek(0)
+            val_image = img
+            plt.close()
+
+        return train_image, val_image
