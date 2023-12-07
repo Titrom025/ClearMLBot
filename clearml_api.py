@@ -23,7 +23,7 @@ class ClearML_API_Wrapped(APIClient):
         
         self.running_tasks = {}
 
-    def update_running_experiments(self):
+    def update_running_experiments(self, chat_id):
         experiment_infos = []
         train_images = []
         val_images = []
@@ -45,6 +45,7 @@ class ClearML_API_Wrapped(APIClient):
             for metric_info in ClearML_API_Wrapped._extract_metrics(last_task_metrics):
                 if metric_info["section"] in ["train", "val"]:
                     all_metrics.append((
+                        chat_id,
                         running_task.name,
                         metric_info["section"],
                         metric_info["metric"],
@@ -89,92 +90,74 @@ class ClearML_API_Wrapped(APIClient):
 
         return metrics
 
+    @staticmethod
+    def _get_plot(metrics, metric_type, experiment_name, color_palette):
+        metric_names = [metric[3] for metric in metrics]
+        iterations = [metric[4] for metric in metrics]
+        values = [metric[5] for metric in metrics]
+        unique_metric_names = set(metric_names)
+
+        legend_labels = []
+        plt.figure(figsize=(10, 6))
+
+        for i, metric_name in enumerate(unique_metric_names):
+            mask = [name == metric_name for name in metric_names]
+            metric_iterations = [iterations[j] for j, m in enumerate(mask) if m]
+            metric_values = [values[j] for j, m in enumerate(mask) if m]
+            plt.plot(
+                metric_iterations,
+                metric_values,
+                marker='o',
+                linestyle='-',
+                label=f'{metric_name}',
+                color=color_palette(i)
+            )
+            legend_labels.append(f'{metric_name}: {round(metric_values[-1], 3)}') 
+
+        plt.title(f"{metric_type} metrics for {experiment_name}")
+        plt.xlabel('Iterations')
+        plt.ylabel('Values')
+        if max(iterations) - min(iterations) > 50:
+            iter_step = 2
+        else:
+            iter_step = 1
+        plt.xticks(np.arange(min(iterations), max(iterations) + 1, iter_step))
+        plt.yticks(np.arange(0, 1.01, 0.1))
+        plt.yticks(np.arange(0, 1.0, 0.05), minor=True)
+        plt.grid(axis='y', which='both')
+        ax = plt.gca()
+        ax.set_ylim([-0.05, 1.05])
+        plt.legend(labels=legend_labels, loc='upper center', 
+                    bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=4)
+        plt.tight_layout()
+        img = io.BytesIO()
+        plt.savefig(img, format='png')
+        img.seek(0)
+        plt.close()
+        return img
+    
     def plot_metrics_for_experiment(self, experiment_name):
         train_metrics = self.db.get_metrics_by_section(experiment_name, "train")
         val_metrics = self.db.get_metrics_by_section(experiment_name, "val")
 
         all_metrics = train_metrics + val_metrics
-        unique_metrics = set(metric[2] for metric in all_metrics)
+        unique_metrics = set(metric[3] for metric in all_metrics)
 
         num_unique_metrics = len(unique_metrics)
         color_palette = plt.cm.get_cmap('tab10', num_unique_metrics)
 
         train_image = None
         if train_metrics:
-            train_iterations = [metric[3] for metric in train_metrics]
-            train_values = [metric[4] for metric in train_metrics]
-            train_metric_names = [metric[2] for metric in train_metrics]
-            unique_train_metric_names = set(train_metric_names)
-
-            legend_labels = []
-            plt.figure(figsize=(10, 6))
-
-            for i, metric_name in enumerate(unique_train_metric_names):
-                mask = [name == metric_name for name in train_metric_names]
-                metric_iterations = [train_iterations[j] for j, m in enumerate(mask) if m]
-                metric_values = [train_values[j] for j, m in enumerate(mask) if m]
-                plt.plot(
-                    metric_iterations,
-                    metric_values,
-                    marker='o',
-                    linestyle='-',
-                    label=f'{metric_name}',
-                    color=color_palette(i)
-                )
-                legend_labels.append(f'{metric_name}: {round(metric_values[-1], 3)}') 
-
-            plt.title(f"Train Metrics for {experiment_name}")
-            plt.xlabel('Iterations')
-            plt.ylabel('Values')
-            plt.xticks(np.arange(min(train_iterations), max(train_iterations) + 1, 1))
-            ax = plt.gca()
-            ax.set_ylim([0, 1.0])
-            plt.legend(labels=legend_labels, loc='upper center', 
-                       bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=4)
-            plt.tight_layout()
-            img = io.BytesIO()
-            plt.savefig(img, format='png')
-            img.seek(0)
-            train_image = img
-            plt.close()
+            train_image = ClearML_API_Wrapped._get_plot(
+                train_metrics, "train", 
+                experiment_name, color_palette
+            )
 
         val_image = None
         if val_metrics:
-            val_iterations = [metric[3] for metric in val_metrics]
-            val_values = [metric[4] for metric in val_metrics]
-            val_metric_names = [metric[2] for metric in val_metrics]
-            unizue_val_metric_names = set(val_metric_names)
-
-            legend_labels = []
-            plt.figure(figsize=(10, 6))
-
-            for i, metric_name in enumerate(unizue_val_metric_names):
-                mask = [name == metric_name for name in val_metric_names]
-                metric_iterations = [val_iterations[j] for j, m in enumerate(mask) if m]
-                metric_values = [val_values[j] for j, m in enumerate(mask) if m]
-                plt.plot(
-                    metric_iterations,
-                    metric_values,
-                    marker='o',
-                    linestyle='-',
-                    label=f'{metric_name}',
-                    color=color_palette(i)
-                )
-                legend_labels.append(f'{metric_name}: {round(metric_values[-1], 3)}')
-
-            plt.title(f"Validation Metrics for {experiment_name}")
-            plt.xlabel('Iterations')
-            plt.ylabel('Values')
-            plt.xticks(np.arange(min(val_iterations), max(val_iterations) + 1, 1))
-            ax = plt.gca()
-            ax.set_ylim([0, 1.0])
-            plt.legend(labels=legend_labels, loc='upper center', 
-                       bbox_to_anchor=(0.5, -0.15), shadow=True, ncol=4)
-            plt.tight_layout()
-            img = io.BytesIO()
-            plt.savefig(img, format='png')
-            img.seek(0)
-            val_image = img
-            plt.close()
+            val_image = ClearML_API_Wrapped._get_plot(
+                val_metrics, "Val", 
+                experiment_name, color_palette
+            )
 
         return train_image, val_image
