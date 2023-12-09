@@ -1,6 +1,5 @@
 import io
 from datetime import datetime
-from math import log
 
 import numpy as np
 from clearml import Task

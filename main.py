@@ -11,6 +11,10 @@ def main():
     database = Database()
     with open('config.json', 'r') as file:
         config = json.load(file)
+    
+    if config["TG_TOKEN"] == "TG_TOKEN":
+        print("Please specify TG_TOKEN in config.json")
+        exit(1)
 
     bot = ClearMLBot(config["TG_TOKEN"], database)
 
