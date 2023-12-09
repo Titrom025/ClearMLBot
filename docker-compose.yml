@@ -1,0 +1,6 @@
+version: '3'
+services:
+  clearml_bot:
+    build: .
+    volumes:
+      - ./config.json:/app/config.json
