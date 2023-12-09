@@ -81,18 +81,11 @@ class ClearMLBot:
             
             message = f'Running experiment count: {len(running_experiments)}'
             for experiment in running_experiments:
-                days = experiment["duration"].days
-                hours = experiment["duration"].seconds // 3600
-                minutes = (experiment["duration"].seconds // 60) % 60
-                if days > 0:
-                    duration_str = f'{days} days {hours}H:{minutes}m'
-                else:
-                    duration_str = f'{hours}H:{minutes}m'
                 message += '\n\n'
                 message += f'Name: {experiment["name"]}\n'
                 message += f'  - Id: {experiment["id"]}\n'
                 message += f'  - Epoch: {experiment["iteration"]}\n'
-                message += f'  - Duration: {duration_str}'
+                message += f'  - Duration: {experiment["duration"]}'
             
             self.bot.send_message(chat_id, message)
 
@@ -168,10 +161,16 @@ class ClearMLBot:
             experiment_infos, train_images, val_images = user_api_client.update_running_experiments(chat_id)
 
             for experiment_info, train_image, val_image in zip(experiment_infos, train_images, val_images):
-                experiment_id = experiment_info["experiment_id"]
-                experiment_name = experiment_info["experiment_name"]
-                last_iteration = experiment_info["last_iteration"]
-                message_text = experiment_info["message"]
+                experiment_id = experiment_info["id"]
+                experiment_name = experiment_info["name"]
+                last_iteration = experiment_info["iteration"]
+                duration_str = experiment_info["duration"]
+
+                message =  f'Name: {experiment_name}\n'
+                message += f'  - Id: {experiment_id}\n'
+                message += f'  - Epoch: {last_iteration}\n'
+                message += f'  - Duration: {duration_str}'
+
                 experiment_info = self.database.get_experiment_info(chat_id, experiment_id)
 
                 if experiment_info is None:
@@ -185,14 +184,14 @@ class ClearMLBot:
                 if text_msg_id != -1:
                     _, _, _, _, text_msg_id, train_msg_id, val_msg_id = experiment_info
                     try:
-                        sent_message = self.bot.edit_message_text(message_text, chat_id, text_msg_id)
+                        sent_message = self.bot.edit_message_text(message, chat_id, text_msg_id)
                         self.database.store_experiment_info(chat_id, experiment_id, 
                                                             experiment_name, last_iteration, 
                                                             sent_message.message_id, train_msg_id, val_msg_id)
-                    except Exception as e:
-                        print('handled', e)
+                    except Exception:
+                        pass
                 else:
-                    sent_message = self.bot.send_message(chat_id, message_text)
+                    sent_message = self.bot.send_message(chat_id, message)
                     self.database.store_experiment_info(chat_id, experiment_id, 
                                                         experiment_name, last_iteration, 
                                                         sent_message.message_id, -1, -1)
@@ -220,8 +219,7 @@ class ClearMLBot:
             try:
                 sent_message = self.bot.edit_message_media(chat_id=chat_id, message_id=message_id, 
                                                        media=telebot.types.InputMediaPhoto(image))
-            except Exception as e:
-                print('photo handled', e)
+            except Exception:
                 return
         else:
             sent_message = self.bot.send_photo(chat_id, image)

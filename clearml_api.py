@@ -24,6 +24,22 @@ class ClearML_API_Wrapped(APIClient):
         
         self.running_tasks = {}
 
+    @staticmethod
+    def _get_duration(running_task_dict):
+        tz = running_task_dict["started"].tzinfo
+        datetime_now = datetime.now(tz=tz)
+        experiment_duration = datetime_now - running_task_dict["started"]
+        days = experiment_duration.days
+        hours = experiment_duration.seconds // 3600
+        minutes = (experiment_duration.seconds // 60) % 60
+
+        if days > 0:
+            duration_str = f'{days} days {hours}H:{minutes}m'
+        else:
+            duration_str = f'{hours}H:{minutes}m'
+
+        return duration_str
+
     def get_running_experiments(self):
         running_task_list = self.tasks.get_all(status=[Task.TaskStatusEnum.in_progress.value])
         if not len(running_task_list):
@@ -36,15 +52,13 @@ class ClearML_API_Wrapped(APIClient):
             name = running_task_dict["name"]
             iteration = running_task_dict["last_iteration"]
 
-            tz =running_task_dict["started"].tzinfo
-            datetime_now = datetime.now(tz=tz)
-            experiment_duration = datetime_now - running_task_dict["started"]
+            duration_str = ClearML_API_Wrapped._get_duration(running_task_dict)
             
             running_experiments.append({
                 "id": id,
                 "name": name,
                 "iteration": iteration,
-                "duration": experiment_duration
+                "duration": duration_str
             })
 
         return running_experiments
@@ -58,28 +72,29 @@ class ClearML_API_Wrapped(APIClient):
             return experiment_infos, train_images, val_images
 
         for running_task in running_task_list:
-            experiment_id = running_task.id
-            experiment_name = running_task.name
-            last_iteration = running_task.last_iteration
+            running_task_dict = running_task.to_dict()
+            experiment_id = running_task_dict["id"]
+            experiment_name = running_task_dict["name"]
+            last_iteration = running_task_dict["last_iteration"]
     
             if self.running_tasks.get(experiment_id, -1) == last_iteration:
                 continue
 
             self.running_tasks[experiment_id] = last_iteration
-
-            message_text = f'Name: {experiment_name}, Iteration: {last_iteration}\n'
-
             last_task_metrics = running_task.last_metrics
 
             all_metrics = []
             for metric_info in ClearML_API_Wrapped._extract_metrics(last_task_metrics):
                 if metric_info["section"] in ["train", "val"]:
+                    metric_iteration = last_iteration
+                    if metric_info["metric"] != "lr":
+                        metric_iteration -= 1
                     all_metrics.append((
                         chat_id,
                         experiment_id,
                         metric_info["section"],
                         metric_info["metric"],
-                        last_iteration,
+                        metric_iteration,
                         metric_info["value"]
                     ))
 
@@ -88,12 +103,15 @@ class ClearML_API_Wrapped(APIClient):
 
             train_image, val_image = self.plot_metrics_for_experiment(experiment_id, experiment_name)
 
+            duration_str = ClearML_API_Wrapped._get_duration(running_task_dict)
+
             experiment_infos.append({
-                "experiment_id": experiment_id,
-                "experiment_name": experiment_name,
-                "last_iteration": last_iteration,
-                "message": message_text
+                "id": experiment_id,
+                "name": experiment_name,
+                "iteration": last_iteration,
+                "duration": duration_str
             })
+
             train_images.append(train_image)
             val_images.append(val_image)
 
