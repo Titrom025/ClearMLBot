@@ -153,6 +153,10 @@ class ClearMLBot:
             secret_key
         )
 
+        try:
+            self.bot.delete_message(chat_id, message.message_id)
+        except Exception:
+            pass
         self.bot.send_message(chat_id, "Registration successful! Your credentials have been saved.")
 
     def send_updates_to_users(self):
