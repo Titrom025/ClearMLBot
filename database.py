@@ -1,7 +1,7 @@
 import sqlite3
 
 class Database:
-    def __init__(self, db_name='clearml.db'):
+    def __init__(self, db_name='database/clearml.db'):
         self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self.create_table()

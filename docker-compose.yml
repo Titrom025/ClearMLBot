@@ -4,3 +4,4 @@ services:
     build: .
     volumes:
       - ./config.json:/app/config.json
+      - ./database/:/app/database/
