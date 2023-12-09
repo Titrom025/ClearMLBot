@@ -168,44 +168,49 @@ class ClearMLBot:
             experiment_infos, train_images, val_images = user_api_client.update_running_experiments(chat_id)
 
             for experiment_info, train_image, val_image in zip(experiment_infos, train_images, val_images):
+                experiment_id = experiment_info["experiment_id"]
                 experiment_name = experiment_info["experiment_name"]
                 last_iteration = experiment_info["last_iteration"]
                 message_text = experiment_info["message"]
-                experiment_info = self.database.get_experiment_info(chat_id, experiment_name)
+                experiment_info = self.database.get_experiment_info(chat_id, experiment_id)
 
                 if experiment_info is None:
-                    self.database.store_experiment_info(chat_id, experiment_name, last_iteration, -1, -1, -1)
-                    experiment_info = self.database.get_experiment_info(chat_id, experiment_name)
+                    self.database.store_experiment_info(chat_id, experiment_id, experiment_name, last_iteration, -1, -1, -1)
+                    experiment_info = self.database.get_experiment_info(chat_id, experiment_id)
 
-                _, _, last_iteration_db, text_msg_id, train_msg_id, val_msg_id = experiment_info
+                _, _, _, last_iteration_db, text_msg_id, train_msg_id, val_msg_id = experiment_info
                 if last_iteration == last_iteration_db:
                     continue
                 
                 if text_msg_id != -1:
-                    _, _, _, text_msg_id, train_msg_id, val_msg_id = experiment_info
+                    _, _, _, _, text_msg_id, train_msg_id, val_msg_id = experiment_info
                     try:
                         sent_message = self.bot.edit_message_text(message_text, chat_id, text_msg_id)
-                        self.database.store_experiment_info(chat_id, experiment_name, last_iteration, 
-                                                        sent_message.message_id, train_msg_id, val_msg_id)
+                        self.database.store_experiment_info(chat_id, experiment_id, 
+                                                            experiment_name, last_iteration, 
+                                                            sent_message.message_id, train_msg_id, val_msg_id)
                     except Exception as e:
                         print('handled', e)
                 else:
                     sent_message = self.bot.send_message(chat_id, message_text)
-                    self.database.store_experiment_info(chat_id, experiment_name, last_iteration, 
+                    self.database.store_experiment_info(chat_id, experiment_id, 
+                                                        experiment_name, last_iteration, 
                                                         sent_message.message_id, -1, -1)
 
                 if train_image is not None:
-                    self.send_or_update_photo(chat_id, experiment_name, last_iteration, train_image, "train")
+                    self.send_or_update_photo(chat_id, experiment_id, experiment_name, 
+                                              last_iteration, train_image, "train")
                 if val_image is not None:
-                    self.send_or_update_photo(chat_id, experiment_name, last_iteration, val_image, "val")
+                    self.send_or_update_photo(chat_id, experiment_id, experiment_name, 
+                                              last_iteration, val_image, "val")
 
-    def send_or_update_photo(self, chat_id, experiment_name, last_iteration, image, section):
+    def send_or_update_photo(self, chat_id, experiment_id, experiment_name, last_iteration, image, section):
         if section not in ["train", "val"]:
             print(f'Section {section} not in ["train", "val"]')
             return
-        experiment_info = self.database.get_experiment_info(chat_id, experiment_name)
+        experiment_info = self.database.get_experiment_info(chat_id, experiment_id)
 
-        _, _, _, text_msg_id, train_msg_id, val_msg_id = experiment_info
+        _, _, _, _, text_msg_id, train_msg_id, val_msg_id = experiment_info
         if section == "train":
             message_id = train_msg_id
         elif section == "val":
@@ -226,7 +231,8 @@ class ClearMLBot:
         elif section == "val":
             val_msg_id = sent_message.message_id
 
-        self.database.store_experiment_info(chat_id, experiment_name, last_iteration, 
+        self.database.store_experiment_info(chat_id, experiment_id,
+                                            experiment_name, last_iteration, 
                                             text_msg_id, train_msg_id, val_msg_id)
 
     def start_bot(self):

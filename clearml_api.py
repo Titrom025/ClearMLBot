@@ -58,12 +58,16 @@ class ClearML_API_Wrapped(APIClient):
             return experiment_infos, train_images, val_images
 
         for running_task in running_task_list:
-            if self.running_tasks.get(running_task.name, -1) == running_task.last_iteration:
+            experiment_id = running_task.id
+            experiment_name = running_task.name
+            last_iteration = running_task.last_iteration
+    
+            if self.running_tasks.get(experiment_id, -1) == last_iteration:
                 continue
 
-            self.running_tasks[running_task.name] = running_task.last_iteration
+            self.running_tasks[experiment_id] = last_iteration
 
-            message_text = f'Name: {running_task.name}, Iteration: {running_task.last_iteration}\n'
+            message_text = f'Name: {experiment_name}, Iteration: {last_iteration}\n'
 
             last_task_metrics = running_task.last_metrics
 
@@ -72,21 +76,22 @@ class ClearML_API_Wrapped(APIClient):
                 if metric_info["section"] in ["train", "val"]:
                     all_metrics.append((
                         chat_id,
-                        running_task.name,
+                        experiment_id,
                         metric_info["section"],
                         metric_info["metric"],
-                        running_task.last_iteration,
+                        last_iteration,
                         metric_info["value"]
                     ))
 
             for metric_data in all_metrics:
                 self.db.insert_metric(*metric_data)
 
-            train_image, val_image = self.plot_metrics_for_experiment(running_task.name)
+            train_image, val_image = self.plot_metrics_for_experiment(experiment_id, experiment_name)
 
             experiment_infos.append({
-                "experiment_name": running_task.name,
-                "last_iteration": running_task.last_iteration,
+                "experiment_id": experiment_id,
+                "experiment_name": experiment_name,
+                "last_iteration": last_iteration,
                 "message": message_text
             })
             train_images.append(train_image)
@@ -162,9 +167,9 @@ class ClearML_API_Wrapped(APIClient):
         plt.close()
         return img
     
-    def plot_metrics_for_experiment(self, experiment_name):
-        train_metrics = self.db.get_metrics_by_section(experiment_name, "train")
-        val_metrics = self.db.get_metrics_by_section(experiment_name, "val")
+    def plot_metrics_for_experiment(self, experiment_id, experiment_name):
+        train_metrics = self.db.get_metrics_by_section(experiment_id, "train")
+        val_metrics = self.db.get_metrics_by_section(experiment_id, "val")
 
         all_metrics = train_metrics + val_metrics
         unique_metrics = set(metric[3] for metric in all_metrics)

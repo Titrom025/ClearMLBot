@@ -20,24 +20,25 @@ class Database:
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS metrics (
                 user_id INTEGER,
-                experiment_name TEXT,
+                experiment_id TEXT,
                 section TEXT,
                 metric_name TEXT,
                 iteration INTEGER,
                 value REAL,
-                PRIMARY KEY (user_id, experiment_name, section, metric_name, iteration)
+                PRIMARY KEY (user_id, experiment_id, section, metric_name, iteration)
             )
         ''')
 
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS experiments (
                 user_id INTEGER,
+                experiment_id TEXT,
                 experiment_name TEXT,
                 last_iteration INTEGER,
                 text_msg_id INTEGER,
                 train_msg_id INTEGER,
                 val_msg_id INTEGER,
-                PRIMARY KEY (user_id, experiment_name)
+                PRIMARY KEY (user_id, experiment_id)
             )
         ''')
 
@@ -66,30 +67,30 @@ class Database:
         self.cursor.execute('DELETE FROM users WHERE username = ?', (username,))
         self.conn.commit()
 
-    def insert_metric(self, user_id, experiment_name, section, metric_name, iteration, value):
+    def insert_metric(self, user_id, experiment_id, section, metric_name, iteration, value):
         self.cursor.execute('''
-            INSERT or REPLACE INTO metrics (user_id, experiment_name, section, metric_name, iteration, value)
+            INSERT or REPLACE INTO metrics (user_id, experiment_id, section, metric_name, iteration, value)
             VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user_id, experiment_name, section, metric_name, iteration, value))
+        ''', (user_id, experiment_id, section, metric_name, iteration, value))
         self.conn.commit()
 
-    def get_metrics_by_section(self, experiment_name, section):
+    def get_metrics_by_section(self, experiment_id, section):
         self.cursor.execute('''
             SELECT * FROM metrics 
-            WHERE experiment_name = ? AND section = ?
-        ''', (experiment_name, section))
+            WHERE experiment_id = ? AND section = ?
+        ''', (experiment_id, section))
         return self.cursor.fetchall()
     
-    def store_experiment_info(self, user_id, experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id):
+    def store_experiment_info(self, user_id, experiment_id, experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id):
         self.cursor.execute('''
-            INSERT OR REPLACE INTO experiments (user_id, experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user_id, experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id))
+            INSERT OR REPLACE INTO experiments (user_id, experiment_id, experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, experiment_id, experiment_name, last_iteration, text_msg_id, train_msg_id, val_msg_id))
         self.conn.commit()
 
-    def get_experiment_info(self, user_id, experiment_name):
-        self.cursor.execute('SELECT * FROM experiments WHERE user_id = ? AND experiment_name = ?', 
-                            (user_id, experiment_name))
+    def get_experiment_info(self, user_id, experiment_id):
+        self.cursor.execute('SELECT * FROM experiments WHERE user_id = ? AND experiment_id = ?', 
+                            (user_id, experiment_id))
         return self.cursor.fetchone()
     
     def close_connection(self):
