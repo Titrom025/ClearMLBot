@@ -21,8 +21,11 @@ def main():
     bot_thread.start()
 
     while True:
-        schedule.run_pending()
-        time.sleep(1)
+        try:
+            schedule.run_pending()
+            time.sleep(1)
+        except Exception as e:
+            print(f'An error occured in schedule.run_pending: {e}')
 
 
 if __name__ == '__main__':

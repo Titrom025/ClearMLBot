@@ -23,6 +23,23 @@ class ClearML_API_Wrapped(APIClient):
         
         self.running_tasks = {}
 
+    def get_running_experiments(self):
+        running_task_list = self.tasks.get_all(status=[Task.TaskStatusEnum.in_progress.value])
+        if not len(running_task_list):
+            return []
+
+        running_experiments = []
+        for running_task in running_task_list:
+            print(running_task)
+            name = running_task.name
+            iteration = running_task.last_iteration
+            running_experiments.append({
+                "name": name,
+                "iteration": iteration,
+            })
+
+        return running_experiments
+
     def update_running_experiments(self, chat_id):
         experiment_infos = []
         train_images = []

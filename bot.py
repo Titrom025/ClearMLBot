@@ -32,11 +32,11 @@ class ClearMLBot:
             self.bot.reply_to(
                 message, 
                 "Available commands:\n"
-                "/help - print this message\n"
-                "/register - add your ClearML credentials\n"
-                "/subscribe - subscribe to your ClearML experiment updates\n"
-                "/unsubscribe - stop receiving experiment updates\n"
-                "/update - manually request information about active experiments\n"
+                "/register - Add ClearML credentials\n"
+                "/subscribe - Subscribe ClearML updates\n"
+                "/unsubscribe - Stop receiving ClearML updates\n"
+                "/experiments - Get info about running experiments\n"
+                "/help - Print help message\n"
             )
 
         @self.bot.message_handler(commands=['register'])
@@ -51,23 +51,14 @@ class ClearMLBot:
                                   disable_web_page_preview=True)
             self.bot.register_next_step_handler(message, self.get_user_creds)
 
-        @self.bot.message_handler(commands=['running_experiments'])
-        def get_running_experiments(message):
-            chat_id = message.chat.id
-            if chat_id in self.subscribed_users:
-                send_and_log(f'User {chat_id} was already subscribed!', chat_id)
-                return
-            self.subscribed_users.add(chat_id)
-            send_and_log(f'User {chat_id} subscribed to updates!', chat_id)
-
         @self.bot.message_handler(commands=['subscribe'])
         def subscribe_command(message):
             chat_id = message.chat.id
             if chat_id in self.user_sessions:
                 send_and_log(f'User {message.chat.username} was already subscribed!', chat_id)
                 return
-            self.subscribe_user(chat_id)
-            send_and_log(f'User {message.chat.username} subscribed to updates!', chat_id)
+            if self.subscribe_user(chat_id):
+                send_and_log(f'User {message.chat.username} subscribed to updates!', chat_id)
 
         @self.bot.message_handler(commands=['unsubscribe'])
         def unsubscribe_command(message):
@@ -77,6 +68,24 @@ class ClearMLBot:
                 return
             self.user_sessions.pop(chat_id)
             send_and_log(f'User "{message.chat.username}" unsubscribed from updates!', chat_id)
+
+        @self.bot.message_handler(commands=['experiments'])
+        def get_running_experiments(message):
+            chat_id = message.chat.id
+            if chat_id not in self.user_sessions:
+                if not self.subscribe_user(chat_id):
+                    return
+            
+            user_api_client = self.user_sessions[chat_id]
+            running_experiments = user_api_client.get_running_experiments()
+            
+            message = f'Running experiment count: {len(running_experiments)}'
+            for experiment in running_experiments:
+                message += '\n\n'
+                message += f' - Name: {experiment["name"]}\n'
+                message += f'    Epoch: {experiment["iteration"]}'
+            
+            self.bot.send_message(chat_id, message)
 
     def polling(self):
         while True:
@@ -89,12 +98,12 @@ class ClearMLBot:
         user_from_db = self.database.get_user_by_id(chat_id)
         if user_from_db is None:
             self.bot.send_message(chat_id, "Use /register to add your ClearML credentials.")
-            return
+            return False
 
-        db_chat_id, username, host, api_key, secret_key = user_from_db
+        _, _, host, api_key, secret_key = user_from_db
 
         if chat_id in self.user_sessions:
-            return
+            return True
 
         user_api_client = ClearML_API_Wrapped(
             host,
@@ -103,6 +112,7 @@ class ClearMLBot:
             self.database
         )
         self.user_sessions[chat_id] = user_api_client
+        return True
 
     def _parse_json(self, text):
         api_server_pattern = r'api_server:\s*(\S+)'
@@ -164,9 +174,12 @@ class ClearMLBot:
                 
                 if text_msg_id != -1:
                     _, _, _, text_msg_id, train_msg_id, val_msg_id = experiment_info
-                    sent_message = self.bot.edit_message_text(message_text, chat_id, text_msg_id)
-                    self.database.store_experiment_info(chat_id, experiment_name, last_iteration, 
+                    try:
+                        sent_message = self.bot.edit_message_text(message_text, chat_id, text_msg_id)
+                        self.database.store_experiment_info(chat_id, experiment_name, last_iteration, 
                                                         sent_message.message_id, train_msg_id, val_msg_id)
+                    except Exception as e:
+                        print(e)
                 else:
                     sent_message = self.bot.send_message(chat_id, message_text)
                     self.database.store_experiment_info(chat_id, experiment_name, last_iteration, 
