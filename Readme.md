@@ -53,3 +53,9 @@ To configure your personalized ClearML bot, follow these steps:
    }
    ```
 4. Execute `docker-compose up` to start the bot.
+
+## Demo
+
+<p align="center">
+  <img width="320" height="570" src="Demo.gif">
+</p>
