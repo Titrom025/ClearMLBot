@@ -81,9 +81,18 @@ class ClearMLBot:
             
             message = f'Running experiment count: {len(running_experiments)}'
             for experiment in running_experiments:
+                days = experiment["duration"].days
+                hours = experiment["duration"].seconds // 3600
+                minutes = (experiment["duration"].seconds // 60) % 60
+                if days > 0:
+                    duration_str = f'{days} days {hours}H:{minutes}m'
+                else:
+                    duration_str = f'{hours}H:{minutes}m'
                 message += '\n\n'
-                message += f' - Name: {experiment["name"]}\n'
-                message += f'    Epoch: {experiment["iteration"]}'
+                message += f'Name: {experiment["name"]}\n'
+                message += f'  - Id: {experiment["id"]}\n'
+                message += f'  - Epoch: {experiment["iteration"]}\n'
+                message += f'  - Duration: {duration_str}'
             
             self.bot.send_message(chat_id, message)
 
@@ -179,7 +188,7 @@ class ClearMLBot:
                         self.database.store_experiment_info(chat_id, experiment_name, last_iteration, 
                                                         sent_message.message_id, train_msg_id, val_msg_id)
                     except Exception as e:
-                        print(e)
+                        print('handled', e)
                 else:
                     sent_message = self.bot.send_message(chat_id, message_text)
                     self.database.store_experiment_info(chat_id, experiment_name, last_iteration, 
@@ -203,8 +212,12 @@ class ClearMLBot:
             message_id = val_msg_id
 
         if message_id != -1:
-            sent_message = self.bot.edit_message_media(chat_id=chat_id, message_id=message_id, 
+            try:
+                sent_message = self.bot.edit_message_media(chat_id=chat_id, message_id=message_id, 
                                                        media=telebot.types.InputMediaPhoto(image))
+            except Exception as e:
+                print('photo handled', e)
+                return
         else:
             sent_message = self.bot.send_photo(chat_id, image)
 

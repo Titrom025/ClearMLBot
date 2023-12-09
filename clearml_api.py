@@ -1,4 +1,5 @@
 import io
+from datetime import datetime
 from math import log
 
 import numpy as np
@@ -30,12 +31,20 @@ class ClearML_API_Wrapped(APIClient):
 
         running_experiments = []
         for running_task in running_task_list:
-            print(running_task)
-            name = running_task.name
-            iteration = running_task.last_iteration
+            running_task_dict = running_task.to_dict()
+            id = running_task_dict["id"]
+            name = running_task_dict["name"]
+            iteration = running_task_dict["last_iteration"]
+
+            tz =running_task_dict["started"].tzinfo
+            datetime_now = datetime.now(tz=tz)
+            experiment_duration = datetime_now - running_task_dict["started"]
+            
             running_experiments.append({
+                "id": id,
                 "name": name,
                 "iteration": iteration,
+                "duration": experiment_duration
             })
 
         return running_experiments
